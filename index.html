@@ -772,9 +772,9 @@
 
       <h3 class="sub">🏠 Thử các tình huống quen thuộc</h3>
       <div class="phase-btns">
-        <button class="btn ghost small" data-scene="nho">🚪 Phòng nhỏ — cách tường 3 m</button>
-        <button class="btn ghost small" data-scene="lon">🏫 Phòng lớn trống — cách tường 20 m</button>
-        <button class="btn ghost small" data-scene="hang">⛰ Trước vách núi, hang động — 60 m</button>
+        <button class="btn ghost small" data-scene="nho" aria-pressed="false">🚪 Phòng nhỏ — cách tường 3 m</button>
+        <button class="btn ghost small" data-scene="lon" aria-pressed="false">🏫 Phòng lớn trống — cách tường 20 m</button>
+        <button class="btn ghost small" data-scene="hang" aria-pressed="false">⛰ Trước vách núi, hang động — 60 m</button>
       </div>
 
       <div class="callout note" style="margin-top:1.1rem">
@@ -1287,7 +1287,16 @@ simPlayBtn.addEventListener("click", function(){
   simPlayBtn.textContent = "⏸ Dừng lại";
   simRaf = requestAnimationFrame(simStep);
 });
-distSlider.addEventListener("input", function(){ updateReadout(); if (!simPlaying) drawSim(); });
+function clearScenePressed(){
+  document.querySelectorAll("[data-scene]").forEach(function(x){
+    x.setAttribute("aria-pressed", "false");
+  });
+}
+distSlider.addEventListener("input", function(){
+  clearScenePressed();
+  updateReadout();
+  if (!simPlaying) drawSim();
+});
 document.querySelectorAll("[data-surf]").forEach(function(b){
   b.addEventListener("click", function(){
     simSurf = b.getAttribute("data-surf");
@@ -1304,14 +1313,25 @@ document.querySelectorAll("[data-scene]").forEach(function(b){
     if (s === "nho") distSlider.value = 3;
     if (s === "lon") distSlider.value = 20;
     if (s === "hang") distSlider.value = 60;
+    document.querySelectorAll("[data-scene]").forEach(function(x){
+      x.setAttribute("aria-pressed", x === b ? "true" : "false");
+    });
     document.querySelectorAll("[data-surf]").forEach(function(x){
       var on = x.getAttribute("data-surf") === "gach";
       x.setAttribute("aria-pressed", on ? "true" : "false");
       if (on) simSurf = "gach";
     });
+    pulses = []; earFlash = 0; emitTimer = 0; simLastTs = null;
     updateReadout();
-    if (!simPlaying) simPlayBtn.click(); else drawSim();
-    document.getElementById("mo-phong").scrollIntoView({ behavior: "smooth", block: "start" });
+    ensureAudio();
+    if (!simPlaying) {
+      simPlaying = true;
+      simPlayBtn.textContent = "⏸ Dừng lại";
+      simRaf = requestAnimationFrame(simStep);
+    } else {
+      drawSim();
+    }
+    simCanvas.scrollIntoView({ behavior: "smooth", block: "nearest" });
   });
 });
 updateReadout();
