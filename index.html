@@ -754,6 +754,7 @@
 
       <div class="sim-controls">
         <button class="btn" id="simPlayBtn">▶ Phát âm</button>
+        <button class="btn ghost small" id="simMuteBtn" aria-pressed="false">🔊 Âm thanh: Bật</button>
       </div>
       <div class="sim-controls">
         <label for="distSlider">Khoảng cách tới bề mặt:</label>
@@ -1036,11 +1037,65 @@ var SURF = {
 };
 var simSurf = "gach";
 var simPlaying = false;
+var simMuted = false;
+var audioCtx = null;
 var simLastTs = null, simRaf = null, emitTimer = 0;
 var pulses = []; /* {cx, r, dir, amp} — dir 1: đi từ người tới bề mặt; dir -1: phản xạ từ bề mặt về */
 var earFlash = 0;
 var distSlider = document.getElementById("distSlider");
 var simPlayBtn = document.getElementById("simPlayBtn");
+var simMuteBtn = document.getElementById("simMuteBtn");
+
+function ensureAudio(){
+  if (simMuted) return null;
+  try {
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    return audioCtx;
+  } catch (e) {
+    return null;
+  }
+}
+
+function playSimTone(isEcho, factor){
+  var ctx = ensureAudio();
+  if (!ctx) return;
+  try {
+    var now = ctx.currentTime;
+    var vol = isEcho ? Math.max(0.03, 0.28 * factor) : 0.28;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    var filter = ctx.createBiquadFilter();
+
+    osc.type = isEcho ? "sine" : "triangle";
+    osc.frequency.setValueAtTime(isEcho ? 523.25 : 587.33, now);
+    if (!isEcho) {
+      osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.08);
+    }
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(isEcho && factor < 0.4 ? 650 : 2600, now);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + (isEcho ? 0.18 : 0.14));
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  } catch (e) {}
+}
+
+simMuteBtn.addEventListener("click", function(){
+  simMuted = !simMuted;
+  simMuteBtn.setAttribute("aria-pressed", simMuted ? "true" : "false");
+  simMuteBtn.textContent = simMuted ? "🔇 Âm thanh: Tắt" : "🔊 Âm thanh: Bật";
+  if (!simMuted) ensureAudio();
+});
 
 var SRC_X = 118, CY = 148, GROUND = 268;
 function wallX(){
@@ -1177,11 +1232,14 @@ function drawSim(){
 
   sctx.fillStyle = dark ? "#b9d2e2" : "#44617a";
   sctx.font = "700 14px 'Be Vietnam Pro', sans-serif";
-  sctx.fillText("Người nói — tai nghe", SRC_X - 52, 34);
+  sctx.textAlign = "center";
+  sctx.fillText("Người nói — tai nghe", SRC_X, 34);
   if (earFlash > 0.25) {
-    sctx.fillStyle = "#C00000";
-    sctx.fillText(SURF[simSurf].factor < 0.4 ? "Âm phản xạ rất yếu…" : "Nghe thấy âm phản xạ!", SRC_X - 52, GROUND + 48);
+    sctx.fillStyle = dark ? "#ff7b7b" : "#C00000";
+    sctx.font = "700 13px 'Be Vietnam Pro', sans-serif";
+    sctx.fillText(SURF[simSurf].factor < 0.4 ? "Âm phản xạ rất yếu…" : "Nghe thấy âm phản xạ!", SRC_X, 58);
   }
+  sctx.textAlign = "left";
 }
 function simStep(ts){
   if (!simPlaying) return;
@@ -1192,6 +1250,7 @@ function simStep(ts){
   emitTimer -= dt;
   if (emitTimer <= 0) {
     pulses.push({ cx: SRC_X + 20, r: 6, dir: 1, amp: 1 });
+    playSimTone(false, 1);
     emitTimer = 0.95;
   }
   var speed = 300, next = [], i, p;
@@ -1203,8 +1262,10 @@ function simStep(ts){
         next.push({ cx: wx, r: Math.max(4, p.cx + p.r - wx), dir: -1, amp: SURF[simSurf].factor });
       } else next.push(p);
     } else {
-      if (p.cx - p.r <= SRC_X + 6) { earFlash = 1; }
-      else next.push(p);
+      if (p.cx - p.r <= SRC_X + 6) {
+        earFlash = 1;
+        playSimTone(true, p.amp);
+      } else next.push(p);
     }
   }
   pulses = next;
@@ -1221,6 +1282,7 @@ function stopSim(){
 }
 simPlayBtn.addEventListener("click", function(){
   if (simPlaying) { stopSim(); return; }
+  ensureAudio();
   simPlaying = true; emitTimer = 0;
   simPlayBtn.textContent = "⏸ Dừng lại";
   simRaf = requestAnimationFrame(simStep);
